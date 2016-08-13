@@ -1,7 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using Google.Protobuf;
 using PokemonGo.RocketAPI.Enums;
@@ -32,7 +29,7 @@ namespace PokemonGo.RocketAPI.Rpc
                 case AuthType.Google:
                     return new GoogleLogin(settings.GoogleUsername, settings.GooglePassword);
                 case AuthType.Ptc:
-                    return new PtcLogin(settings.PtcUsername, settings.PtcPassword);
+                    return new PtcLogin(settings.PtcUsername, settings.PtcPassword, settings);
                 default:
                     throw new ArgumentOutOfRangeException(nameof(settings.AuthType), "Unknown AuthType");
             }
