@@ -7,7 +7,7 @@ using System.Diagnostics;
 using System.Collections.Generic;
 using System.Linq;
 using PokemonGo.RocketAPI.Extensions;
-using NecroBot_Network_Logic;
+using RetroBot_Network_Logic;
 
 namespace PokemonGo.RocketAPI.Helpers
 {
