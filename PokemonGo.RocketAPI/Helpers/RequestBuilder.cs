@@ -1,13 +1,15 @@
 ﻿using Google.Protobuf;
 using PokemonGo.RocketAPI.Enums;
+using POGOProtos.Networking;
 using POGOProtos.Networking.Envelopes;
 using POGOProtos.Networking.Requests;
 using System;
+using System.Runtime.InteropServices;
 using System.Diagnostics;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using PokemonGo.RocketAPI.Extensions;
-using RetroBot_Network_Logic;
 
 namespace PokemonGo.RocketAPI.Helpers
 {
@@ -109,15 +111,40 @@ namespace PokemonGo.RocketAPI.Helpers
 
             //static for now
             sig.Unk22 = ByteString.CopyFrom(new byte[16] { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F });
-            
+
+
             Unknown6 val = new Unknown6();
             val.RequestType = 6;
             val.Unknown2 = new Unknown6.Types.Unknown2();
-            var iv = new byte[32];
-            new Random().NextBytes(iv);
-            val.Unknown2.Unknown1 = ByteString.CopyFrom(Encryption.Encrypt(sig.ToByteArray(), iv));
+            val.Unknown2.Unknown1 = ByteString.CopyFrom(Encrypt(sig.ToByteArray()));
             return val;
         }
+        private byte[] Encrypt(byte[] bytes)
+        {
+            var outputLength = 32 + bytes.Length + (256 - (bytes.Length % 256));
+            var ptr = Marshal.AllocHGlobal(outputLength);
+            var ptrOutput = Marshal.AllocHGlobal(outputLength);
+            FillMemory(ptr, (uint)outputLength, 0);
+            FillMemory(ptrOutput, (uint)outputLength, 0);
+            Marshal.Copy(bytes, 0, ptr, bytes.Length);
+            try
+            {
+                int outputSize = outputLength;
+                EncryptNative(ptr, bytes.Length, new byte[32], 32, ptrOutput, out outputSize);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+            }
+            var output = new byte[outputLength];
+            Marshal.Copy(ptrOutput, output, 0, outputLength);
+            return output;
+        }
+
+        [DllImport("encrypt.dll", EntryPoint = "encrypt", CharSet = CharSet.Auto, CallingConvention = CallingConvention.Cdecl)]
+        static extern private void EncryptNative(IntPtr arr, int length, byte[] iv, int ivsize, IntPtr output, out int outputSize);
+        [DllImport("kernel32.dll", EntryPoint = "RtlFillMemory", SetLastError = false)]
+        static extern void FillMemory(IntPtr destination, uint length, byte fill);
 
         public RequestEnvelope GetRequestEnvelope(params Request[] customRequests)
         {
