@@ -10,6 +10,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using PokemonGo.RocketAPI.Extensions;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 
 namespace PokemonGo.RocketAPI.Helpers
 {
@@ -35,6 +37,9 @@ namespace PokemonGo.RocketAPI.Helpers
             _authTicket = authTicket;
             if (!_internalWatch.IsRunning)
                 _internalWatch.Start();
+
+            if (encryptNative == null)
+                encryptNative = (EncryptDelegate)FunctionLoader.LoadFunction<EncryptDelegate>(@"Resources\encrypt.dll", "encrypt");
         }
 
         private Unknown6 GenerateSignature(IEnumerable<IMessage> requests)
@@ -112,13 +117,21 @@ namespace PokemonGo.RocketAPI.Helpers
             //static for now
             sig.Unk22 = ByteString.CopyFrom(new byte[16] { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F });
 
-
             Unknown6 val = new Unknown6();
             val.RequestType = 6;
             val.Unknown2 = new Unknown6.Types.Unknown2();
             val.Unknown2.Unknown1 = ByteString.CopyFrom(Encrypt(sig.ToByteArray()));
             return val;
         }
+
+        private static byte[] GetURandom(int size)
+        {
+            var rng = new RNGCryptoServiceProvider();
+            var buffer = new byte[size];
+            rng.GetBytes(buffer);
+            return buffer;
+        }
+
         private byte[] Encrypt(byte[] bytes)
         {
             var outputLength = 32 + bytes.Length + (256 - (bytes.Length % 256));
@@ -127,10 +140,15 @@ namespace PokemonGo.RocketAPI.Helpers
             FillMemory(ptr, (uint)outputLength, 0);
             FillMemory(ptrOutput, (uint)outputLength, 0);
             Marshal.Copy(bytes, 0, ptr, bytes.Length);
+
+            var iv = GetURandom(32);
+            var iv_ptr = Marshal.AllocHGlobal(iv.Length);
+            Marshal.Copy(iv, 0, iv_ptr, iv.Length);
+
             try
             {
-                int outputSize = outputLength;
-                EncryptNative(ptr, bytes.Length, new byte[32], 32, ptrOutput, out outputSize);
+                var outputSize = outputLength;
+                encryptNative(ptr, bytes.Length, iv_ptr, iv.Length, ptrOutput, out outputSize);
             }
             catch (Exception ex)
             {
@@ -141,8 +159,27 @@ namespace PokemonGo.RocketAPI.Helpers
             return output;
         }
 
-        [DllImport("encrypt.dll", EntryPoint = "encrypt", CharSet = CharSet.Auto, CallingConvention = CallingConvention.Cdecl)]
-        static extern private void EncryptNative(IntPtr arr, int length, byte[] iv, int ivsize, IntPtr output, out int outputSize);
+        static class FunctionLoader
+        {
+            [DllImport("Kernel32.dll")]
+            private static extern IntPtr LoadLibrary(string path);
+
+            [DllImport("Kernel32.dll")]
+            private static extern IntPtr GetProcAddress(IntPtr hModule, string procName);
+
+            public static Delegate LoadFunction<T>(string dllPath, string functionName)
+            {
+                var hModule = LoadLibrary(dllPath);
+                var functionAddress = GetProcAddress(hModule, functionName);
+                return Marshal.GetDelegateForFunctionPointer(functionAddress, typeof(T));
+            }
+        }
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private unsafe delegate int EncryptDelegate(IntPtr arr, int length, IntPtr iv, int ivsize, IntPtr output, out int outputSize);
+
+        private static EncryptDelegate encryptNative;
+
         [DllImport("kernel32.dll", EntryPoint = "RtlFillMemory", SetLastError = false)]
         static extern void FillMemory(IntPtr destination, uint length, byte fill);
 
